@@ -57,7 +57,7 @@ _resolve_config_path() {
     esac
 }
 
-CONFIG_PATH="$(_resolve_config_path)"
+CONFIG_PATH="${CONFIG_PATH:-$(_resolve_config_path)}"
 
 # --- Runtime config variables ---
 # CFG_ORDER, CFG_ENABLED_<NAME>, CFG_COMMAND_<NAME>, CFG_MODEL_<NAME>, etc.

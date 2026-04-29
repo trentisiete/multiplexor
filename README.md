@@ -185,6 +185,14 @@ multiplexor/
 
 Max file size: 288 LOC (soft cap: 400, hard cap: 700).
 
+## Testing
+
+```bash
+bash test_launch.sh
+```
+
+10 tests covering: default config loading, disabled providers, not-installed detection, score calculation with credits bonus, candidate ordering, fallback selection, and subcommand stability. No real providers, credentials, or network access required.
+
 ## Roadmap
 
 These are planned but **not implemented yet**:
