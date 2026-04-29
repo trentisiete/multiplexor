@@ -1,0 +1,69 @@
+# multiplexor — configuración de usuario
+# Copia este archivo a:
+#   Linux/macOS: ~/.config/multiplexor/config.yaml
+#   Windows:     %USERPROFILE%\.multiplexor\config.yaml
+#
+# Los valores mostrados son los defaults.
+
+providers:
+  claude:
+    enabled: true
+    command: "claude"
+    priority: 90
+    fallback_only: false
+    credits_hint: unknown    # high, medium, low, none, unknown
+
+  codex:
+    enabled: true
+    command: "codex"
+    priority: 85
+    fallback_only: false
+    credits_hint: unknown
+
+  gemini:
+    enabled: true
+    command: "gemini"
+    priority: 75
+    fallback_only: false
+    credits_hint: unknown
+
+  ollama:
+    enabled: true
+    command: "ollama"
+    priority: 70
+    fallback_only: true        # solo si no hay otros disponibles
+    credits_hint: high         # local, siempre disponible
+
+  openrouter:
+    enabled: true
+    command: "openrouter"
+    priority: 80
+    fallback_only: false
+    credits_hint: unknown
+
+  hermes:
+    enabled: true
+    command: "hermes chat"
+    priority: 60
+    fallback_only: false
+    credits_hint: unknown
+
+  opencode:
+    enabled: true
+    command: "opencode"
+    priority: 55
+    fallback_only: false
+    credits_hint: unknown
+
+routing:
+  default_profile: "balanced"
+
+profiles:
+  balanced:
+    prefer_available: true
+
+  coding:
+    prefer_tools: true
+
+  cheap:
+    prefer_low_cost: true
