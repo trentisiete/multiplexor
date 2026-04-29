@@ -56,6 +56,18 @@ cmd_explain() {
         echo "  - Command NOT found."
     fi
 
+    # Show model for ollama
+    if [[ "$selected" == "ollama" ]]; then
+        local model
+        model=$(get_model "$selected")
+        if [[ -n "$model" ]]; then
+            echo "  - Model: $model"
+            echo "  - Launch command: ollama run $model"
+        else
+            echo "  - Model: NOT SET (add default_model in config.yaml)"
+        fi
+    fi
+
     local priority
     priority=$(get_priority "$selected")
     echo "  - Priority: $priority"

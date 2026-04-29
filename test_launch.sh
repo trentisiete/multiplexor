@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for multiplexor — verifies launch selection, fallback, and error handling
+# Tests for multiplexor — verifies launch selection, fallback, ollama, and error handling
 set -eo pipefail
 
 MPX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +25,6 @@ output=$(bash -c '
     done
 ' 2>/dev/null)
 
-# Should complete without hanging
 if [[ -n "$output" ]]; then
     pass "all scores computed"
     echo "$output" | while IFS= read -r line; do echo "    $line"; done
@@ -94,7 +93,7 @@ rm -f ~/.config/multiplexor/config.yaml
 echo ""
 echo "=== TEST 5: cmd_run resolves correct command ==="
 
-# Create a mock launch.sh that captures instead of executing
+# Create a temporary launch.sh that captures instead of executing
 cp "$MPX_DIR/lib/launch.sh" "$TMP/launch.bak"
 
 cat > "$MPX_DIR/lib/launch.sh" << 'MOCK'
@@ -126,7 +125,7 @@ cmd_run() {
         local sc; sc=$(get_score "$force_provider")
         [[ "$sc" -eq 0 ]] && { echo "Error: not available" >&2; exit 1; }
 
-        local cmd; cmd=$(get_cmd "$force_provider")
+        local cmd; cmd=$(_build_cmd "$force_provider")
         [[ "$dry_run" == true ]] && { echo "Would launch:"; echo "  $cmd"; return; }
         echo "→ $force_provider (score: $sc)"; echo "→ $cmd"
         _try_launch "$cmd"
@@ -139,7 +138,7 @@ cmd_run() {
     for provider in $_cands; do
         [[ -z "$provider" ]] && continue
         if ! is_available "$provider"; then continue; fi
-        local cmd; cmd=$(get_cmd "$provider")
+        local cmd; cmd=$(_build_cmd "$provider")
         [[ -n "$extra_args" ]] && cmd="$cmd $extra_args"
         [[ "$dry_run" == true ]] && { echo "Would launch:"; echo "  $cmd"; return; }
         echo "Trying $provider..." >&2
@@ -150,7 +149,6 @@ cmd_run() {
 }
 MOCK
 
-# Re-source with mock in a fresh bash to pick up the new launch.sh
 # 5a: Default launch
 output=$(bash -c '
     source "'"$MPX_DIR"'/lib/utils.sh"
@@ -161,6 +159,13 @@ output=$(bash -c '
     cmd_run 2>&1
     cat /tmp/mpx_launch_cmd.txt 2>/dev/null
 ' 2>&1)
+
+if echo "$output" | grep -qE "^(hermes chat|claude|opencode)"; then
+    first_cmd=$(echo "$output" | grep -oE "^(hermes chat|claude|opencode)" | head -1)
+    pass "default launch → $first_cmd"
+else
+    fail "default launch" "provider command" "$output"
+fi
 
 # 5b: Force hermes
 output2=$(bash -c '
@@ -173,6 +178,12 @@ output2=$(bash -c '
     cat /tmp/mpx_launch_cmd.txt 2>/dev/null
 ' 2>&1)
 
+if echo "$output2" | grep -q "hermes chat"; then
+    pass "force hermes → 'hermes chat'"
+else
+    fail "force hermes" "hermes chat" "$output2"
+fi
+
 # 5c: Extra args
 output3=$(bash -c '
     source "'"$MPX_DIR"'/lib/utils.sh"
@@ -184,28 +195,14 @@ output3=$(bash -c '
     cat /tmp/mpx_launch_cmd.txt 2>/dev/null
 ' 2>&1)
 
-# Restore original launch.sh
-mv "$TMP/launch.bak" "$MPX_DIR/lib/launch.sh"
-
-# Check results
-if echo "$output" | grep -qE "^(claude|hermes|opencode)"; then
-    first_cmd=$(echo "$output" | grep -oE "^(claude|hermes chat|opencode)" | head -1)
-    pass "default launch → $first_cmd"
-else
-    fail "default launch" "provider command" "$output"
-fi
-
-if echo "$output2" | grep -q "hermes chat"; then
-    pass "force hermes → 'hermes chat'"
-else
-    fail "force hermes" "hermes chat" "$output2"
-fi
-
 if echo "$output3" | grep -q "fix the bug"; then
     pass "extra args included"
 else
     fail "extra args" "fix the bug" "$output3"
 fi
+
+# Restore original launch.sh
+mv "$TMP/launch.bak" "$MPX_DIR/lib/launch.sh"
 
 # ===========================
 # TEST 6: credits=none triggers fallback
@@ -235,9 +232,8 @@ output=$(bash -c '
     echo "$_cands"
 ' 2>/dev/null)
 
-# claude should have score 0 (credits=none), hermes should be first candidate
 if echo "$output" | grep -q "hermes"; then
-    pass "credits=none: hermes is first candidate (candidates: $output)"
+    pass "credits=none: hermes is first candidate"
 else
     fail "first candidate" "hermes" "$output"
 fi
@@ -281,6 +277,103 @@ else
 fi
 
 rm -f ~/.config/multiplexor/config.yaml
+
+# ===========================
+# TEST 9: Ollama detection (not installed → score 0)
+# ===========================
+echo ""
+echo "=== TEST 9: Ollama not installed → score 0 ==="
+
+output=$(bash -c '
+    source "'"$MPX_DIR"'/lib/utils.sh"
+    source "'"$MPX_DIR"'/lib/config.sh"
+    source "'"$MPX_DIR"'/lib/providers.sh"
+    echo "ollama_detected=$(_detect ollama && echo yes || echo no)"
+    echo "ollama_score=$(get_score ollama)"
+' 2>/dev/null)
+
+if echo "$output" | grep -q "ollama_detected=no"; then
+    pass "ollama not detected (expected)"
+else
+    fail "ollama detected" "no" "$output"
+fi
+
+# ===========================
+# TEST 10: Ollama with model configured
+# ===========================
+echo ""
+echo "=== TEST 10: Ollama config with default_model ==="
+
+mkdir -p ~/.config/multiplexor
+cat > ~/.config/multiplexor/config.yaml << 'YAML'
+providers:
+  ollama:
+    enabled: true
+    priority: 30
+    fallback_only: true
+    default_model: "llama3.2:3b"
+YAML
+
+output=$(bash -c '
+    source "'"$MPX_DIR"'/lib/utils.sh"
+    source "'"$MPX_DIR"'/lib/config.sh"
+    source "'"$MPX_DIR"'/lib/providers.sh"
+    model=$(get_model ollama)
+    fb=$(get_fallback ollama && echo yes || echo no)
+    prio=$(get_priority ollama)
+    echo "model=$model fallback=$fb priority=$prio"
+' 2>/dev/null)
+
+if echo "$output" | grep -q 'model=llama3.2:3b.*fallback=yes.*priority=30'; then
+    pass "ollama config: model=llama3.2:3b, fallback=yes, priority=30"
+else
+    fail "ollama config" "model=llama3.2:3b fallback=yes priority=30" "$output"
+fi
+
+rm -f ~/.config/multiplexor/config.yaml
+
+# ===========================
+# TEST 11: _build_cmd for ollama with model
+# ===========================
+echo ""
+echo "=== TEST 11: _build_cmd for ollama ==="
+
+# Create config with ollama model
+mkdir -p ~/.config/multiplexor
+cat > ~/.config/multiplexor/config.yaml << 'YAML'
+providers:
+  ollama:
+    enabled: true
+    default_model: "llama3.2:3b"
+YAML
+
+output=$(bash -c '
+    source "'"$MPX_DIR"'/lib/utils.sh"
+    source "'"$MPX_DIR"'/lib/config.sh"
+    source "'"$MPX_DIR"'/lib/providers.sh"
+    echo "cmd=$(_build_cmd ollama)"
+' 2>/dev/null)
+
+if echo "$output" | grep -q 'cmd=ollama run llama3.2:3b'; then
+    pass "ollama build_cmd → 'ollama run llama3.2:3b'"
+else
+    fail "build_cmd" "ollama run llama3.2:3b" "$output"
+fi
+
+rm -f ~/.config/multiplexor/config.yaml
+
+# ===========================
+# TEST 12: list shows model column
+# ===========================
+echo ""
+echo "=== TEST 12: list shows MODEL column ==="
+
+output=$("$MPX_DIR/multiplexor" list 2>&1)
+if echo "$output" | grep -q "MODEL"; then
+    pass "list shows MODEL header"
+else
+    fail "list header" "MODEL" "$output"
+fi
 
 # ===========================
 # Summary

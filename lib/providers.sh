@@ -20,6 +20,13 @@ get_cmd() {
     fi
 }
 
+# --- Model (for ollama and similar) ---
+get_model() {
+    local val
+    val="$(_cfg_val MODEL "$1")"
+    echo "$val"
+}
+
 # --- Enabled ---
 get_enabled() {
     local val
@@ -58,6 +65,7 @@ is_available() {
     case "$ctype" in
         env)        return 1 ;;
         cli_status) _check_cli_status "$(get_cmd "$name")" ;;
+        ollama)     _check_ollama ;;
         http*)
             local url=""
             if [[ "$ctype" == "http+"* ]]; then
@@ -165,6 +173,16 @@ get_unavail_reason() {
         fi
     fi
 
+    # Ollama-specific: missing model
+    if [[ "$name" == "ollama" ]]; then
+        local model
+        model=$(get_model "$name")
+        if [[ -z "$model" ]]; then
+            echo "no model configured (add default_model in config.yaml)"
+            return
+        fi
+    fi
+
     local ctype
     ctype="$(_cfg_val CTYPE "$name")"
     if [[ -z "$ctype" ]]; then
@@ -174,10 +192,32 @@ get_unavail_reason() {
     case "$ctype" in
         env)        echo "no authentication configured" ;;
         cli_status) echo "CLI not authenticated" ;;
+        ollama)     echo "ollama server not responding" ;;
         http*)      echo "service not responding" ;;
         installed)  echo "unknown reason" ;;
         *)          echo "not available" ;;
     esac
+}
+
+# --- Build launch command ---
+# For providers like ollama, builds the full command with model.
+# Returns: "ollama run llama3.2:3b" or just the raw command for others.
+_build_cmd() {
+    local name="$1"
+    local cmd
+    cmd=$(get_cmd "$name")
+
+    # Ollama: build "ollama run <model>" if model is configured
+    if [[ "$name" == "ollama" ]]; then
+        local model
+        model=$(get_model "$name")
+        if [[ -n "$model" ]]; then
+            echo "$cmd run $model"
+            return
+        fi
+    fi
+
+    echo "$cmd"
 }
 
 # --- Build sorted candidate list ---

@@ -61,18 +61,27 @@ cmd_doctor() {
             icon="✓"; reason="ready"
         fi
 
-        # Shorten path
-        local display_cmd=""
+        # Shorten path / model info
+        local display_extra=""
         if [[ -n "$cmd_path" ]]; then
             local first_word="${cmd_path%% *}"
             if [[ "$first_word" == */* ]]; then
-                display_cmd="(${first_word/#$HOME/~})"
+                display_extra="(${first_word/#$HOME/~})"
+            fi
+        fi
+        if [[ "$provider" == "ollama" ]] && [[ "$detected" == "yes" ]]; then
+            local model
+            model=$(get_model "$provider")
+            if [[ -n "$model" ]]; then
+                display_extra="model: $model"
+            else
+                display_extra="⚠ no model set (add default_model in config)"
             fi
         fi
 
         printf "  %s %-12s %-10s score %-4s enabled %-3s priority %-3s credits %-7s fallback %s\n" \
             "$icon" "$provider" "$reason" "$score" "$enabled" "$priority" "$credits" "$fallback"
-        [[ -n "$display_cmd" ]] && printf "               %s\n" "$display_cmd"
+        [[ -n "$display_extra" ]] && printf "               %s\n" "$display_extra"
 
         # Track best (non-fallback vs fallback)
         if (( score > 0 )); then

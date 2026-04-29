@@ -2,7 +2,7 @@
 # Configuration loading: paths, defaults, YAML parsing, runtime config.
 
 # --- Constants ---
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # --- Default providers table ---
 # Format: name|command|env_vars|check_type|check_url|priority
@@ -10,10 +10,10 @@ _DEFAULT_PROVIDERS=(
     "claude|claude|ANTHROPIC_API_KEY|cli_status||90"
     "codex|codex|OPENAI_API_KEY|env||85"
     "gemini|gemini|GOOGLE_API_KEY,GEMINI_API_KEY|env||75"
-    "ollama|ollama||http|http://localhost:11434/api/tags|70"
     "openrouter|openrouter|OPENROUTER_API_KEY|env||80"
     "hermes|hermes chat||installed||60"
     "opencode|opencode||installed||55"
+    "ollama|ollama||ollama||30"
 )
 
 # --- Provider metadata lookup ---
@@ -60,7 +60,7 @@ _resolve_config_path() {
 CONFIG_PATH="$(_resolve_config_path)"
 
 # --- Runtime config variables ---
-# CFG_ORDER, CFG_ENABLED_<NAME>, CFG_COMMAND_<NAME>, etc.
+# CFG_ORDER, CFG_ENABLED_<NAME>, CFG_COMMAND_<NAME>, CFG_MODEL_<NAME>, etc.
 
 _load_defaults() {
     CFG_ORDER=""
@@ -77,6 +77,7 @@ _load_defaults() {
         eval "CFG_CURL_$up=\"\$curl\""
         eval "CFG_FALLBACK_$up=false"
         eval "CFG_CREDITS_$up=unknown"
+        eval "CFG_MODEL_$up=\"\""
     done
 }
 
@@ -132,12 +133,13 @@ try:
     for name in providers:
         p = providers[name] or {}
         enabled = str(p.get("enabled", True)).lower()
-        command = p.get("command", name)
-        priority = str(p.get("priority", 50))
+        command = p.get("command", "")
+        priority = p.get("priority", "")
         fallback = str(p.get("fallback_only", False)).lower()
-        credits = str(p.get("credits_hint", "unknown")).lower()
+        credits = p.get("credits_hint", "")
         check_url = p.get("check_url", "")
-        print("provider|" + name + "|enabled=" + enabled + "|command=" + str(command) + "|priority=" + priority + "|fallback=" + fallback + "|credits=" + credits + "|check_url=" + str(check_url))
+        default_model = str(p.get("default_model", ""))
+        print("provider|" + name + "|enabled=" + enabled + "|command=" + str(command) + "|priority=" + str(priority) + "|fallback=" + fallback + "|credits=" + str(credits) + "|check_url=" + str(check_url) + "|default_model=" + default_model)
 
     if routing:
         profile = routing.get("default_profile", "")
@@ -168,18 +170,19 @@ _load_yaml_config() {
         if [[ "$line" == provider\|* ]]; then
             IFS='|' read -r _tag name rest <<< "$line"
 
-            local enabled=true command="" priority="" fallback="" credits="" check_url=""
+            local enabled=true command="" priority="" fallback="" credits="" check_url="" default_model=""
             IFS='|' read -ra PARTS <<< "$rest"
             for part in "${PARTS[@]}"; do
                 local k="${part%%=*}"
                 local v="${part#*=}"
                 case "$k" in
-                    enabled)    enabled="$v" ;;
-                    command)    command="$v" ;;
-                    priority)   priority="$v" ;;
-                    fallback)   fallback="$v" ;;
-                    credits)    credits="$v" ;;
-                    check_url)  check_url="$v" ;;
+                    enabled)       enabled="$v" ;;
+                    command)       command="$v" ;;
+                    priority)      priority="$v" ;;
+                    fallback)      fallback="$v" ;;
+                    credits)       credits="$v" ;;
+                    check_url)     check_url="$v" ;;
+                    default_model) default_model="$v" ;;
                 esac
             done
 
@@ -193,10 +196,11 @@ _load_yaml_config() {
 
             eval "CFG_ENABLED_$up=\"$enabled\""
             [[ -n "$command" ]] && eval "CFG_COMMAND_$up=\"$command\""
-            [[ -n "$priority" ]] && eval "CFG_PRIORITY_$up=\"$priority\""
+            [[ "$priority" != "" ]] && eval "CFG_PRIORITY_$up=\"$priority\""
             [[ -n "$fallback" ]] && eval "CFG_FALLBACK_$up=\"$fallback\""
-            [[ -n "$credits" ]] && eval "CFG_CREDITS_$up=\"$credits\""
+            [[ "$credits" != "" ]] && eval "CFG_CREDITS_$up=\"$credits\""
             [[ -n "$check_url" ]] && eval "CFG_CURL_$up=\"$check_url\""
+            [[ -n "$default_model" ]] && eval "CFG_MODEL_$up=\"$default_model\""
 
             yaml_providers="$yaml_providers $name"
         fi

@@ -3,10 +3,8 @@
 # Entry point: sources all lib modules, then dispatches to subcommands.
 set -eo pipefail
 
-# Resolve the directory where this script lives
 _MULTIPLEXOR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source all lib modules (order matters: utils → config → providers → commands)
 source "$_MULTIPLEXOR_ROOT/lib/utils.sh"
 source "$_MULTIPLEXOR_ROOT/lib/config.sh"
 source "$_MULTIPLEXOR_ROOT/lib/providers.sh"
@@ -16,7 +14,6 @@ source "$_MULTIPLEXOR_ROOT/lib/list.sh"
 source "$_MULTIPLEXOR_ROOT/lib/explain.sh"
 source "$_MULTIPLEXOR_ROOT/lib/help.sh"
 
-# Main dispatch
 case "${1:-}" in
     doctor)         cmd_doctor ;;
     list)           cmd_list ;;

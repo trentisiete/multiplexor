@@ -83,6 +83,31 @@ _check_cli_status() {
     return 1
 }
 
+# Ollama: check via `ollama list` (returns 0 if server responds)
+_check_ollama() {
+    if ! _cmd_exists "ollama"; then
+        return 1
+    fi
+    local tmpfile="/tmp/mpx_ollama_$$.txt"
+    ollama list > "$tmpfile" 2>&1 &
+    local pid=$!
+    local i=0
+    while kill -0 $pid 2>/dev/null; do
+        sleep 0.5
+        i=$((i + 1))
+        if (( i >= 6 )); then
+            kill $pid 2>/dev/null
+            wait $pid 2>/dev/null
+            rm -f "$tmpfile"
+            return 1
+        fi
+    done
+    wait $pid 2>/dev/null
+    local rc=$?
+    rm -f "$tmpfile"
+    return $rc
+}
+
 _check_http() {
     [[ -n "$1" ]] && curl -sf "$1" &>/dev/null
 }
