@@ -36,8 +36,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+*.egg
+*.whl
+*.tar.gz
 dist/
 build/
+.eggs/
 
 # === Node ===
 node_modules/

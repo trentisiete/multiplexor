@@ -10,14 +10,33 @@ Different tasks work better with different models, but manually switching betwee
 
 ## Install
 
-No dependencies beyond Bash 3.2+ (macOS default) and python3.
+### Recommended: pipx
+
+```bash
+pipx install .
+```
+
+pipx installs in an isolated virtual environment and adds the command to your PATH.
+
+### Development: editable install
+
+```bash
+pip install -e .
+```
+
+Changes to the source files take effect immediately without reinstalling.
+
+### Manual: direct script usage
+
+If you don't want to use pip, you can run the script directly:
 
 ```bash
 git clone https://github.com/your-org/multiplexor.git
 cd multiplexor
-chmod +x multiplexor
-sudo cp multiplexor /usr/local/bin/multiplexor
+./multiplexor doctor
 ```
+
+**Requirements:** Bash 3.2+ (macOS default), python3 (for YAML parsing).
 
 That's it. The tool works with no configuration — it detects providers automatically.
 
@@ -137,28 +156,34 @@ To add a custom provider, add it to `_DEFAULT_PROVIDERS` in `lib/config.sh` or c
 ## Requirements
 
 - Bash 3.2+ (macOS default)
-- python3 (for YAML parsing)
+- python3 3.9+ (for YAML parsing and package installation)
 - Optional: PyYAML (`pip install pyyaml`) for faster YAML loading
 
 ## Project structure
 
 ```
-multiplexor                 # Entry point (28 lines)
-lib/
-  utils.sh                  # Helpers, colors, checks (113 LOC)
-  config.sh                 # Defaults, YAML parser, config loading (235 LOC)
-  providers.sh              # Provider interface, scoring, selection (288 LOC)
-  launch.sh                 # Terminal launch, fallback retry (197 LOC)
-  doctor.sh                 # Diagnostics command (121 LOC)
-  list.sh                   # Tabular view command (25 LOC)
-  explain.sh                # Selection explanation command (126 LOC)
-  help.sh                   # Help command (36 LOC)
-  README.md                 # Module documentation
-config.example.yaml         # Full config template
-test_launch.sh              # Test suite
+multiplexor/
+  pyproject.toml              # Python package definition
+  src/multiplexor/
+    __init__.py               # Version constant
+    __main__.py               # Python entry point (calls bash script)
+    data/
+      multiplexor             # Bash entry point script
+      lib/
+        utils.sh              # Helpers, colors, checks (113 LOC)
+        config.sh             # Defaults, YAML parser, config loading (235 LOC)
+        providers.sh          # Provider interface, scoring, selection (288 LOC)
+        launch.sh             # Terminal launch, fallback retry (197 LOC)
+        doctor.sh             # Diagnostics command (121 LOC)
+        list.sh               # Tabular view command (25 LOC)
+        explain.sh            # Selection explanation command (126 LOC)
+        help.sh               # Help command (36 LOC)
+        README.md             # Module documentation
+  config.example.yaml         # Full config template
+  test_launch.sh              # Test suite
 ```
 
-Max file size: 283 LOC (soft cap: 400, hard cap: 700).
+Max file size: 288 LOC (soft cap: 400, hard cap: 700).
 
 ## Roadmap
 

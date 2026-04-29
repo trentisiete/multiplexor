@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# multiplexor — Detecta, puntúa y abre el mejor CLI de IA disponible.
+# Entry point: sources all lib modules, then dispatches to subcommands.
+set -eo pipefail
+
+_MULTIPLEXOR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$_MULTIPLEXOR_ROOT/lib/utils.sh"
+source "$_MULTIPLEXOR_ROOT/lib/config.sh"
+source "$_MULTIPLEXOR_ROOT/lib/providers.sh"
+source "$_MULTIPLEXOR_ROOT/lib/launch.sh"
+source "$_MULTIPLEXOR_ROOT/lib/doctor.sh"
+source "$_MULTIPLEXOR_ROOT/lib/list.sh"
+source "$_MULTIPLEXOR_ROOT/lib/explain.sh"
+source "$_MULTIPLEXOR_ROOT/lib/help.sh"
+
+case "${1:-}" in
+    doctor)         cmd_doctor ;;
+    list)           cmd_list ;;
+    --explain|-e)   cmd_explain ;;
+    --help|-h)      cmd_help ;;
+    --version|-v)   echo "multiplexor $VERSION" ;;
+    "")             cmd_run ;;
+    *)              cmd_run "$@" ;;
+esac
