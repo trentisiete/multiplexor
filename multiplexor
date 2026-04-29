@@ -15,6 +15,7 @@ source "$_MULTIPLEXOR_ROOT/lib/explain.sh"
 source "$_MULTIPLEXOR_ROOT/lib/help.sh"
 
 case "${1:-}" in
+    init)           cmd_init ;;
     doctor)         cmd_doctor ;;
     list)           cmd_list ;;
     --explain|-e)   cmd_explain ;;

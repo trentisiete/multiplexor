@@ -38,28 +38,23 @@ cd multiplexor
 
 **Requirements:** Bash 3.2+ (macOS default), python3 (for YAML parsing).
 
-That's it. The tool works with no configuration — it detects providers automatically.
-
 ## Quick start
 
 ```bash
-# See what multiplexor detects
+# 1. Create default config (optional)
+multiplexor init
+
+# 2. See what multiplexor detects
 multiplexor doctor
 
-# Launch the best available AI CLI
+# 3. Launch the best available AI CLI
 multiplexor
 
-# Show what it would launch without executing
+# 4. Show what it would launch without executing
 multiplexor --dry-run
 
-# Force a specific provider
+# 5. Force a specific provider
 multiplexor --provider ollama
-
-# Explain why a provider was chosen
-multiplexor --explain
-
-# Show all providers in a table
-multiplexor list
 ```
 
 ## How it works
@@ -85,6 +80,13 @@ multiplexor list
 ## Configuration
 
 Works with no config. To customize, create `~/.config/multiplexor/config.yaml`:
+
+```bash
+multiplexor init
+# then edit ~/.config/multiplexor/config.yaml
+```
+
+Or write it from scratch:
 
 ```yaml
 providers:
@@ -136,6 +138,7 @@ To add a custom provider, add it to `_DEFAULT_PROVIDERS` in `lib/config.sh` or c
 | Command | Description |
 |---|---|
 | `multiplexor` | Detect and launch the best provider |
+| `multiplexor init` | Create default config file |
 | `multiplexor --dry-run` | Show what would launch without executing |
 | `multiplexor --provider X` | Force provider X |
 | `multiplexor -- "text"` | Pass arguments to the selected CLI |
@@ -159,32 +162,6 @@ To add a custom provider, add it to `_DEFAULT_PROVIDERS` in `lib/config.sh` or c
 - python3 3.9+ (for YAML parsing and package installation)
 - Optional: PyYAML (`pip install pyyaml`) for faster YAML loading
 
-## Project structure
-
-```
-multiplexor/
-  pyproject.toml              # Python package definition
-  src/multiplexor/
-    __init__.py               # Version constant
-    __main__.py               # Python entry point (calls bash script)
-    data/
-      multiplexor             # Bash entry point script
-      lib/
-        utils.sh              # Helpers, colors, checks (113 LOC)
-        config.sh             # Defaults, YAML parser, config loading (235 LOC)
-        providers.sh          # Provider interface, scoring, selection (288 LOC)
-        launch.sh             # Terminal launch, fallback retry (197 LOC)
-        doctor.sh             # Diagnostics command (121 LOC)
-        list.sh               # Tabular view command (25 LOC)
-        explain.sh            # Selection explanation command (126 LOC)
-        help.sh               # Help command (36 LOC)
-        README.md             # Module documentation
-  config.example.yaml         # Full config template
-  test_launch.sh              # Test suite
-```
-
-Max file size: 288 LOC (soft cap: 400, hard cap: 700).
-
 ## Testing
 
 ```bash
@@ -192,6 +169,32 @@ bash test_launch.sh
 ```
 
 10 tests covering: default config loading, disabled providers, not-installed detection, score calculation with credits bonus, candidate ordering, fallback selection, and subcommand stability. No real providers, credentials, or network access required.
+
+## Project structure
+
+```
+multiplexor/
+  pyproject.toml              # Python package definition
+  LICENSE                     # MIT license
+  README.md                   # This file
+  config.example.yaml         # Full config template
+  test_launch.sh              # Test suite
+  src/multiplexor/
+    __init__.py               # Version constant
+    __main__.py               # Python entry point (calls bash script)
+    data/
+      multiplexor             # Bash entry point script
+      lib/
+        utils.sh              # Helpers, colors, checks
+        config.sh             # Defaults, YAML parser, config loading
+        providers.sh          # Provider interface, scoring, selection
+        launch.sh             # Terminal launch, fallback retry
+        doctor.sh             # Diagnostics command
+        list.sh               # Tabular view command
+        explain.sh            # Selection explanation command
+        help.sh               # Help and init commands
+        README.md             # Module documentation
+```
 
 ## Roadmap
 
