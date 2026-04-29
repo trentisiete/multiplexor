@@ -4,15 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multiplexor"
-version = "0.3.0"
-description = "Auto-select and launch the best available AI agent CLI"
+version = "1.0.0"
+description = "Local subagent router for AI CLIs"
 readme = "README.md"
-license = {text = "MIT"}
-requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
 authors = [
     { name = "multiplexor contributors" }
 ]
-keywords = ["ai", "cli", "agent", "llm", "claude", "codex", "ollama"]
+keywords = ["ai", "cli", "agent", "llm", "subagents", "gemini", "opencode", "ollama"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -21,8 +22,6 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -30,10 +29,11 @@ classifiers = [
 ]
 
 [project.scripts]
-multiplexor = "multiplexor.__main__:main"
+multiplexor = "multiplexor.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["multiplexor*"]
 
 [tool.setuptools.package-data]
-multiplexor = ["data/*", "data/lib/*"]
+multiplexor = ["config.example.yaml"]

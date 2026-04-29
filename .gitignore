@@ -17,6 +17,7 @@ id_dsa
 config.yaml
 *.local.yaml
 *.private.yaml
+state.json
 
 # === OS files ===
 .DS_Store

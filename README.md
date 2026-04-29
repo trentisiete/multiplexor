@@ -1,207 +1,146 @@
 # multiplexor
 
-A Bash CLI that detects, scores, and launches the best available AI agent CLI on your machine.
+`multiplexor` is a small local command for a primary agent such as Codex or Claude to delegate work to other AI CLIs as subagents. It detects installed commands, ranks providers, runs non-interactive delegation commands, captures output, and lets you mark the last provider as temporarily exhausted with `multiplexor next`.
 
-If you use multiple AI CLIs (Claude, Codex, Gemini, OpenRouter, Ollama...), multiplexor picks the best one and opens it automatically.
-
-## Why?
-
-Different tasks work better with different models, but manually switching between CLIs is annoying. Multiplexor checks what you have installed, scores each provider by priority and availability, and launches the best one. If your top choice has no credits or auth, it falls back to the next best option.
+The v1 focus is Gemini CLI and OpenCode as the main subagent targets because their CLIs work well in headless mode. Ollama is only a local fallback. Qwen Code, Hermes, Claude and Codex are present only as optional disabled providers, because they are not the free-tier focus for this tool.
 
 ## Install
-
-### Recommended: pipx
-
-```bash
-pipx install .
-```
-
-pipx installs in an isolated virtual environment and adds the command to your PATH.
-
-### Development: editable install
 
 ```bash
 pip install -e .
 ```
 
-Changes to the source files take effect immediately without reinstalling.
+Requirements:
 
-### Manual: direct script usage
+- Python 3.11+
+- At least one supported CLI in `PATH`
+- Recommended for v1: Gemini CLI and OpenCode
 
-If you don't want to use pip, you can run the script directly:
-
-```bash
-git clone https://github.com/your-org/multiplexor.git
-cd multiplexor
-./multiplexor doctor
-```
-
-**Requirements:** Bash 3.2+ (macOS default), python3 (for YAML parsing).
-
-## Quick start
+## Quickstart
 
 ```bash
-# 1. Create default config (optional)
 multiplexor init
-
-# 2. See what multiplexor detects
 multiplexor doctor
-
-# 3. Launch the best available AI CLI
-multiplexor
-
-# 4. Show what it would launch without executing
+multiplexor status
 multiplexor --dry-run
-
-# 5. Force a specific provider
-multiplexor --provider ollama
+multiplexor delegate "review this repo and list risks"
+multiplexor ask --dry-run "hola"
+multiplexor ask "hola"
+multiplexor next
+multiplexor reset
 ```
 
-## How it works
-
-1. **Detect** — checks which AI CLIs are installed on your system
-2. **Score** — calculates a score per provider:
-
-   ```
-   score = priority + credits_bonus
-   ```
-
-   | Credits hint | Bonus |
-   |---|---|
-   | `high` | +20 |
-   | `medium` | +10 |
-   | `low` | -10 |
-   | `none` | ineligible (score 0) |
-   | `unknown` | +0 |
-
-3. **Select** — picks the highest score. Falls back to `fallback_only: true` providers only if nothing else is available.
-4. **Launch** — opens the CLI in your terminal. If it fails, tries the next provider.
-
-## Configuration
-
-Works with no config. To customize, create `~/.config/multiplexor/config.yaml`:
+Force a provider:
 
 ```bash
-multiplexor init
-# then edit ~/.config/multiplexor/config.yaml
+multiplexor --provider gemini --dry-run
+multiplexor ask --provider opencode --dry-run "hola"
 ```
 
-Or write it from scratch:
+For primary agents, the main command is:
 
-```yaml
-providers:
-  claude:
-    enabled: true
-    command: "claude"
-    priority: 90
-    credits_hint: high
-
-  hermes:
-    enabled: true
-    command: "hermes chat"
-    priority: 60
-
-  ollama:
-    enabled: true
-    priority: 30
-    fallback_only: true
-    default_model: "llama3.2:3b"
+```bash
+multiplexor delegate "analyze this repository and return concrete risks"
 ```
-
-| Field | Required | Description |
-|---|---|---|
-| `enabled` | no | Enable/disable provider (default: true) |
-| `command` | no | Command to run (default: provider name) |
-| `priority` | no | Base score (default: 50) |
-| `fallback_only` | no | Only use if no other provider available (default: false) |
-| `credits_hint` | no | `high`, `medium`, `low`, `none`, `unknown` |
-| `default_model` | no | Default model for providers like ollama |
-| `check_type` | no | `env`, `cli_status`, `ollama`, `http`, `installed` |
-| `check_url` | no | URL for `http` check type |
 
 ## Providers
 
-| Provider | Default priority | Check |
-|---|---|---|
-| claude | 90 | CLI status or ANTHROPIC_API_KEY |
-| codex | 85 | OPENAI_API_KEY |
-| openrouter | 80 | OPENROUTER_API_KEY |
-| gemini | 75 | GOOGLE_API_KEY or GEMINI_API_KEY |
-| hermes | 60 | Installed |
-| opencode | 55 | Installed |
-| ollama | 30 | `ollama list` responds + default_model set |
+Default priority:
 
-To add a custom provider, add it to `_DEFAULT_PROVIDERS` in `lib/config.sh` or configure it in YAML.
+1. Gemini CLI
+2. OpenCode
+3. Ollama as local fallback
+
+Optional disabled providers:
+
+- Qwen Code
+- Hermes
+- Claude
+- Codex
+
+Verified locally during v1 development with:
+
+- Gemini CLI `0.40.0`
+- OpenCode `1.14.29`
+
+## Config
+
+User config is created at:
+
+- Linux/macOS: `~/.config/multiplexor/config.yaml`
+- Windows: `%USERPROFILE%\.multiplexor\config.yaml`
+
+See `config.example.yaml`. Commands are lists of arguments, not shell strings. If `ask_stdin: true`, the task is sent through stdin. Otherwise only the literal `{prompt}` placeholder is replaced in `ask_command`.
+
+Adding a provider should usually mean adding one config entry with `command`, `interactive_command`, `ask_command`, `tier` and `priority`. The `Provider` class handles the shared behavior: detection, mode support, scoring and safe prompt substitution.
+
+For subagent use, `delegate` and `ask` are the important commands. They are aliases:
+
+```bash
+multiplexor delegate "inspect the current project and summarize the tests"
+echo "inspect the current project" | multiplexor delegate
+```
+
+Scoring is:
+
+```text
+score = priority + tier_bonus
+```
+
+Fallback-only providers such as Ollama are used only when no normal provider is eligible. Ollama must specify a model in its commands and `default_model`.
+
+## State
+
+Local state lives next to the config as `state.json`. It stores only:
+
+- `last_provider`
+- temporary `exhausted_until` marks
+
+It does not store API keys, tokens, cookies, credentials or prompts.
+
+## What It Does Not Do
+
+- It does not bypass free-tier limits.
+- It does not scrape exact credits.
+- It does not modify provider configs.
+- It does not run a proxy, daemon, server, MCP layer or dashboard.
+- It does not use `shell=True`.
+
+The default Gemini/OpenCode delegate commands use each CLI's official "allow everything" mode so a primary agent can delegate without approval loops: Gemini uses `--approval-mode=yolo`, and OpenCode uses `--dangerously-skip-permissions`. Prompts are sent via stdin by default so they do not appear in process arguments. This is intentionally powerful and should only be used in repos where you are comfortable letting the delegated CLI edit files and run commands. First-time auth/setup still belongs to each CLI. `multiplexor` does not store credentials or inject secrets.
+
+More detail:
+
+- [Usage](docs/usage.md)
+- [Configuration](docs/configuration.md)
+- [Security](docs/security.md)
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `multiplexor` | Detect and launch the best provider |
-| `multiplexor init` | Create default config file |
-| `multiplexor --dry-run` | Show what would launch without executing |
-| `multiplexor --provider X` | Force provider X |
-| `multiplexor -- "text"` | Pass arguments to the selected CLI |
-| `multiplexor doctor` | Diagnose all providers |
-| `multiplexor list` | Table of providers with scores |
-| `multiplexor --explain` | Explain selection decision |
-| `multiplexor --help` | Show help |
-| `multiplexor --version` | Show version |
-
-## Security
-
-- This tool does **not** store API keys, passwords, or tokens.
-- It does **not** send any data to external services.
-- It relies on each CLI's existing authentication (env vars, CLI status).
-- Your config.yaml contains no secrets — only provider names, priorities, and model names.
-- Do not commit config.yaml if you add custom paths that expose sensitive information.
-
-## Requirements
-
-- Bash 3.2+ (macOS default)
-- python3 3.9+ (for YAML parsing and package installation)
-- Optional: PyYAML (`pip install pyyaml`) for faster YAML loading
+- `multiplexor init`: create user config if missing.
+- `multiplexor doctor`: inspect config, state and provider detection.
+- `multiplexor status`: show ranking and eligibility.
+- `multiplexor`: launch the best interactive provider.
+- `multiplexor delegate "TASK"`: run the best headless provider as a subagent with fallback.
+- `multiplexor ask "PROMPT"`: alias for `delegate`.
+- `multiplexor next`: mark the last provider exhausted and launch the next.
+- `multiplexor reset`: clear exhausted marks.
+- `--dry-run`: show the command without executing it.
+- `--provider NAME`: force one provider.
 
 ## Testing
 
 ```bash
-bash test_launch.sh
+python3 -m unittest discover -s tests
 ```
 
-10 tests covering: default config loading, disabled providers, not-installed detection, score calculation with credits bonus, candidate ordering, fallback selection, and subcommand stability. No real providers, credentials, or network access required.
+Tests use fake commands and mocks. No real CLIs or credentials are required.
 
-## Project structure
+## Limitations
 
-```
-multiplexor/
-  pyproject.toml              # Python package definition
-  LICENSE                     # MIT license
-  README.md                   # This file
-  config.example.yaml         # Full config template
-  test_launch.sh              # Test suite
-  src/multiplexor/
-    __init__.py               # Version constant
-    __main__.py               # Python entry point (calls bash script)
-    data/
-      multiplexor             # Bash entry point script
-      lib/
-        utils.sh              # Helpers, colors, checks
-        config.sh             # Defaults, YAML parser, config loading
-        providers.sh          # Provider interface, scoring, selection
-        launch.sh             # Terminal launch, fallback retry
-        doctor.sh             # Diagnostics command
-        list.sh               # Tabular view command
-        explain.sh            # Selection explanation command
-        help.sh               # Help and init commands
-        README.md             # Module documentation
-```
+This v1 only detects installed commands and explicit temporary exhaustion state. It cannot know exact provider quota. If a CLI blocks waiting for setup in `ask` mode, the configured timeout stops the run and tries the next provider.
 
-## Roadmap
+## Minimal Roadmap
 
-These are planned but **not implemented yet**:
-
-- Interactive provider selector (TUI)
-- Automatic credit detection from CLI APIs
-- Profile-based routing (`balanced`, `coding`, `cheap`)
-- More providers
-- MCP mode
+- Add clearer provider-specific setup hints.
+- Add optional per-provider timeout overrides.
+- Add small examples for custom local providers.

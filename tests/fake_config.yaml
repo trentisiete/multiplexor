@@ -1,0 +1,59 @@
+routing:
+  exhausted_cooldown_hours: 24
+  ask_timeout_seconds: 10
+
+tiers:
+  free:
+    bonus: 30
+  included:
+    bonus: 25
+  local:
+    bonus: 5
+  paid:
+    bonus: 0
+
+providers:
+  gemini:
+    enabled: true
+    tier: free
+    priority: 100
+    command: "python3"
+    interactive_command:
+      - "python3"
+      - "-c"
+      - "print('fake interactive gemini')"
+    ask_command:
+      - "python3"
+      - "-c"
+      - "import sys; print('fake gemini response: ' + sys.argv[1])"
+      - "{prompt}"
+
+  opencode:
+    enabled: true
+    tier: included
+    priority: 90
+    command: "python3"
+    interactive_command:
+      - "python3"
+      - "-c"
+      - "print('fake interactive opencode')"
+    ask_command:
+      - "python3"
+      - "-c"
+      - "import sys; print('fake opencode response: ' + sys.argv[1])"
+      - "{prompt}"
+
+  qwen:
+    enabled: false
+    tier: paid
+    priority: 95
+    command: "python3"
+    interactive_command:
+      - "python3"
+      - "-c"
+      - "print('fake interactive qwen')"
+    ask_command:
+      - "python3"
+      - "-c"
+      - "import sys; print('fake qwen response: ' + sys.argv[1])"
+      - "{prompt}"
