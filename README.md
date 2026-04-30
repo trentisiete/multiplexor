@@ -1,8 +1,45 @@
 # multiplexor
 
-`multiplexor` is a small local command for a primary agent such as Codex or Claude to delegate work to other AI CLIs as subagents. It detects installed commands, ranks providers, runs non-interactive delegation commands, captures output, and lets you mark the last provider as temporarily exhausted with `multiplexor next`.
+**Free-tier subagent routing for AI CLIs.**
 
-The v1 focus is Gemini CLI and OpenCode as the main subagent targets because their CLIs work well in headless mode. Ollama is only a local fallback. Qwen Code, Hermes, Claude and Codex are present only as optional disabled providers, because they are not the free-tier focus for this tool.
+You have a primary agent doing the heavy work. You also have Gemini CLI, OpenCode, and maybe a local Ollama model sitting idle. `multiplexor` connects them. It lets your main agent delegate tasks to any installed AI CLI -- automatically picking the best one, falling back when quotas run dry, and keeping everything local.
+
+No proxies. No daemon. No MCP layer. Just a small Python command that knows which CLIs you have installed, scores them, picks one, runs it, and moves on.
+
+---
+
+## The problem this solves
+
+Free-tier AI CLIs are powerful but limited. Gemini CLI gives you access to Gemini models at no cost. OpenCode includes its own quota. But once one provider gets exhausted, you are stuck waiting or switching manually.
+
+`multiplexor` fixes the switching part. It treats your installed CLIs as a pool of subagents and routes work through them in order of priority and availability. When one runs dry, you mark it exhausted with `multiplexor next` and it immediately tries the next best option. When all free providers are gone, Ollama runs locally as a last resort.
+
+This is not about bypassing limits. It is about making sure you never sit idle when another provider is available and ready.
+
+---
+
+## How it works
+
+1. You install `multiplexor` and run `multiplexor init` to create your config.
+2. The config declares which CLIs you have, their tier (`free`, `included`, `local`, `paid`), and a priority score.
+3. When your primary agent calls `multiplexor delegate "task"`, the router computes `score = priority + tier_bonus`, filters out exhausted or missing providers, and picks the highest-ranked one.
+4. The task runs headless. Output is captured. If it fails or times out, the next provider tries automatically.
+5. When a provider hits its limit, `multiplexor next` marks it temporarily exhausted (24h cooldown by default) and launches the next eligible provider.
+
+```
+primary agent
+     |
+     v
+multiplexor delegate "review this PR"
+     |
+     v
+  router scores providers:
+     gemini    score 130  (priority 100 + free bonus 30)  <-- picked
+     opencode  score 115  (priority 90  + included bonus 25)
+     ollama    score  15  (priority 10  + local bonus 5)   (fallback only)
+```
+
+---
 
 ## Install
 
@@ -10,122 +47,148 @@ The v1 focus is Gemini CLI and OpenCode as the main subagent targets because the
 pip install -e .
 ```
 
-Requirements:
+Requires Python 3.11+ and at least one supported CLI in your `PATH`.
 
-- Python 3.11+
-- At least one supported CLI in `PATH`
-- Recommended for v1: Gemini CLI and OpenCode
+---
 
 ## Quickstart
 
 ```bash
-multiplexor init
-multiplexor doctor
-multiplexor status
-multiplexor --dry-run
-multiplexor delegate "review this repo and list risks"
-multiplexor ask --dry-run "hola"
-multiplexor ask "hola"
-multiplexor next
-multiplexor reset
+multiplexor init          # create user config
+multiplexor doctor        # verify everything is detected
+multiplexor status        # see current ranking
+multiplexor delegate "review this repository and list concrete risks"
 ```
 
-Force a provider:
+When the current provider gets exhausted:
 
 ```bash
-multiplexor --provider gemini --dry-run
-multiplexor ask --provider opencode --dry-run "hola"
+multiplexor next          # mark last provider exhausted, launch next
 ```
 
-For primary agents, the main command is:
+Other commands you will use:
 
 ```bash
-multiplexor delegate "analyze this repository and return concrete risks"
+multiplexor                    # launch best interactive provider
+multiplexor reset              # clear all exhaustion marks
+multiplexor next               # skip to next provider
+multiplexor delegate "task"    # headless subagent run
+multiplexor ask "prompt"       # alias for delegate
+multiplexor --dry-run          # show what would run
+multiplexor --provider gemini  # force a specific provider
 ```
+
+Piping works too:
+
+```bash
+git diff | multiplexor delegate "review these changes"
+```
+
+---
 
 ## Providers
 
-Default priority:
+The default config ships with these providers:
 
-1. Gemini CLI
-2. OpenCode
-3. Ollama as local fallback
+| Provider   | Tier     | Priority | Default State | Notes                          |
+|------------|----------|----------|---------------|--------------------------------|
+| Gemini CLI | free     | 100      | enabled       | Main subagent, headless capable |
+| OpenCode   | included | 90       | enabled       | Good secondary option           |
+| Ollama     | local    | 10       | enabled       | Fallback only, runs locally     |
+| Qwen       | paid     | 95       | disabled      | Optional                        |
+| Hermes     | paid     | 80       | disabled      | Optional                        |
+| Codex      | paid     | 40       | disabled      | Optional                        |
+| Claude     | paid     | 30       | disabled      | Optional                        |
 
-Optional disabled providers:
+Paid providers are disabled by default because the v1 focus is free-tier delegation. Enable them in your config if you want them in the routing pool.
 
-- Qwen Code
-- Hermes
-- Claude
-- Codex
+Scoring formula:
 
-Verified locally during v1 development with:
+```
+score = priority + tier_bonus
+```
 
-- Gemini CLI `0.40.0`
-- OpenCode `1.14.29`
+Tier bonuses: `free=30`, `included=25`, `local=5`, `paid=0`. Gemini CLI with its base priority of 100 and free bonus of 30 scores 130, always winning unless exhausted.
 
-## Config
+---
 
-User config is created at:
+## Configuration
+
+Run `multiplexor init` to create your config at:
 
 - Linux/macOS: `~/.config/multiplexor/config.yaml`
 - Windows: `%USERPROFILE%\.multiplexor\config.yaml`
 
-See `config.example.yaml`. Commands are lists of arguments, not shell strings. If `ask_stdin: true`, the task is sent through stdin. Otherwise only the literal `{prompt}` placeholder is replaced in `ask_command`.
+A provider entry needs only a few fields:
 
-Adding a provider should usually mean adding one config entry with `command`, `interactive_command`, `ask_command`, `tier` and `priority`. The `Provider` class handles the shared behavior: detection, mode support, scoring and safe prompt substitution.
+```yaml
+providers:
+  gemini:
+    enabled: true
+    tier: free
+    priority: 100
+    command: "gemini"
+    interactive_command: ["gemini", "--skip-trust", "--approval-mode=yolo"]
+    ask_command: ["gemini", "--skip-trust", "--approval-mode=yolo", "-p", ""]
+    ask_stdin: true
+```
 
-For subagent use, `delegate` and `ask` are the important commands. They are aliases:
+The `Provider` class handles everything else: detection from `PATH`, command construction, scoring, and prompt substitution. Adding a new provider means adding a config block. No code changes required.
+
+Key fields:
+- `enabled`: include or skip this provider
+- `tier`: determines the bonus added to priority
+- `priority`: base ranking score
+- `command`: executable name for PATH detection
+- `interactive_command` / `ask_command`: command templates for each mode
+- `ask_stdin`: send task through stdin instead of argv
+- `fallback_only`: only use when no normal provider is eligible
+- `default_model`: required for Ollama
+
+---
+
+## State and exhaustion
+
+State is stored locally as `state.json` next to your config. It tracks only two things:
+
+- The last provider that ran
+- Temporary exhaustion marks (with an expiration timestamp)
+
+It does not store credentials, API keys, prompts, or anything sensitive. The exhaustion cooldown defaults to 24 hours and is configurable.
 
 ```bash
-multiplexor delegate "inspect the current project and summarize the tests"
-echo "inspect the current project" | multiplexor delegate
+multiplexor next    # marks last_provider as exhausted
+multiplexor reset   # clears all exhaustion marks
 ```
 
-Scoring is:
+---
 
-```text
-score = priority + tier_bonus
-```
+## Security model
 
-Fallback-only providers such as Ollama are used only when no normal provider is eligible. Ollama must specify a model in its commands and `default_model`.
+`multiplexor` runs commands with `shell=False`. No shell injection surface. Prompts go through stdin by default so they never appear in process arguments visible to `ps`.
 
-## State
+The default delegate commands use each CLI's official allow-all permission mode:
 
-Local state lives next to the config as `state.json`. It stores only:
+- Gemini: `--skip-trust --approval-mode=yolo`
+- OpenCode: `--dangerously-skip-permissions`
 
-- `last_provider`
-- temporary `exhausted_until` marks
+This is intentional. A delegated CLI can edit files and run commands. Only use this in repositories where you are comfortable with that behavior. First-time authentication and setup still belong to each CLI. `multiplexor` does not store or inject any credentials.
 
-It does not store API keys, tokens, cookies, credentials or prompts.
+It does not:
+- bypass rate limits or quotas
+- scrape provider credit balances
+- modify any provider's internal configuration
+- run a proxy, daemon, web server, or MCP server
 
-## What It Does Not Do
+---
 
-- It does not bypass free-tier limits.
-- It does not scrape exact credits.
-- It does not modify provider configs.
-- It does not run a proxy, daemon, server, MCP layer or dashboard.
-- It does not use `shell=True`.
+## Limitations
 
-The default Gemini/OpenCode delegate commands use each CLI's official "allow everything" mode so a primary agent can delegate without approval loops: Gemini uses `--approval-mode=yolo`, and OpenCode uses `--dangerously-skip-permissions`. Prompts are sent via stdin by default so they do not appear in process arguments. This is intentionally powerful and should only be used in repos where you are comfortable letting the delegated CLI edit files and run commands. First-time auth/setup still belongs to each CLI. `multiplexor` does not store credentials or inject secrets.
+v1 operates on what it can detect: installed commands and explicit exhaustion state. It cannot read your exact Gemini quota or predict when a provider will fail. If a CLI hangs waiting for interactive setup, the configured timeout (default 120s) kills it and tries the next provider.
 
-More detail:
+Provider-specific setup hints and per-provider timeout overrides are planned.
 
-- [Usage](docs/usage.md)
-- [Configuration](docs/configuration.md)
-- [Security](docs/security.md)
-
-## Commands
-
-- `multiplexor init`: create user config if missing.
-- `multiplexor doctor`: inspect config, state and provider detection.
-- `multiplexor status`: show ranking and eligibility.
-- `multiplexor`: launch the best interactive provider.
-- `multiplexor delegate "TASK"`: run the best headless provider as a subagent with fallback.
-- `multiplexor ask "PROMPT"`: alias for `delegate`.
-- `multiplexor next`: mark the last provider exhausted and launch the next.
-- `multiplexor reset`: clear exhausted marks.
-- `--dry-run`: show the command without executing it.
-- `--provider NAME`: force one provider.
+---
 
 ## Testing
 
@@ -133,14 +196,20 @@ More detail:
 python3 -m unittest discover -s tests
 ```
 
-Tests use fake commands and mocks. No real CLIs or credentials are required.
+Tests use mocked commands. No real CLIs or credentials needed.
 
-## Limitations
+---
 
-This v1 only detects installed commands and explicit temporary exhaustion state. It cannot know exact provider quota. If a CLI blocks waiting for setup in `ask` mode, the configured timeout stops the run and tries the next provider.
+## Roadmap
 
-## Minimal Roadmap
+- Clearer per-provider setup hints when a CLI fails to run
+- Optional per-provider timeout overrides in config
+- Examples for adding custom local providers
 
-- Add clearer provider-specific setup hints.
-- Add optional per-provider timeout overrides.
-- Add small examples for custom local providers.
+---
+
+## Docs
+
+- [Usage](docs/usage.md) - command examples and patterns
+- [Configuration](docs/configuration.md) - provider config, scoring, and state
+- [Security](docs/security.md) - threat model and operational notes
