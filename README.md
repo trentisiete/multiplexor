@@ -113,8 +113,22 @@ re-typing the prompt.
 ## Install
 
 ```bash
+pipx install endy-multiplexor      # cleanest: isolated env, binaries on PATH
+# or:
+uv tool install endy-multiplexor   # same outcome via uv
+# or:
+pip install --user endy-multiplexor
+
+# From source (developers):
 pip install -e .
 ```
+
+The PyPI distribution name is `endy-multiplexor` (the plain `multiplexor`
+name on PyPI is owned by an unrelated 2020 websockets package). The
+Python module is still `import multiplexor`; the CLIs are still
+`multiplexor` and `multiplexor-next-provider`. If you install endy via
+`endy install`, multiplexor is bootstrapped automatically — you do not
+need this step separately.
 
 Requires Python 3.11+ and at least one supported CLI in your `PATH`.
 

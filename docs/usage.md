@@ -2,6 +2,9 @@
 
 `multiplexor` is meant to be called by a primary agent from a shell.
 
+(Install with `pipx install endy-multiplexor` — the PyPI distribution
+name. The CLI itself is still `multiplexor`.)
+
 Main command:
 
 ```bash

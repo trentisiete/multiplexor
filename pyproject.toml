@@ -3,17 +3,22 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "multiplexor"
+# PyPI distribution name. The plain `multiplexor` was taken by an unrelated
+# 2020 websockets package, so we publish as `endy-multiplexor`. The Python
+# module is still `import multiplexor`, the CLIs are still `multiplexor`
+# and `multiplexor-next-provider` — only `pip install endy-multiplexor`
+# is the published shape.
+name = "endy-multiplexor"
 version = "1.0.0"
-description = "Local subagent router for AI CLIs"
+description = "Free-tier subagent routing for AI CLIs. The routing policy for endy."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
-    { name = "multiplexor contributors" }
+    { name = "trentisiete" }
 ]
-keywords = ["ai", "cli", "agent", "llm", "subagents", "gemini", "opencode", "ollama"]
+keywords = ["ai", "cli", "agent", "llm", "subagents", "endy", "handoff", "gemini", "opencode", "ollama"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -27,6 +32,12 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Utilities",
 ]
+
+[project.urls]
+Homepage = "https://github.com/trentisiete/multiplexor"
+Repository = "https://github.com/trentisiete/multiplexor"
+Issues = "https://github.com/trentisiete/multiplexor/issues"
+"Paired-with" = "https://github.com/trentisiete/endy"
 
 [project.scripts]
 multiplexor = "multiplexor.cli:main"
