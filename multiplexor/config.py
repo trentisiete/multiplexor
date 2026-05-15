@@ -108,6 +108,23 @@ def _scalar(value: str):
     if value.startswith("[") and value.endswith("]"):
         inner = value[1:-1].strip()
         return [] if not inner else [_scalar(part.strip()) for part in inner.split(",")]
+    if value.startswith("{") and value.endswith("}"):
+        # Inline-dict flow syntax: { key: value, key2: value2 }. Real YAML
+        # treats this as a mapping; our fallback parser needs to too,
+        # otherwise users without PyYAML installed get the value as a string
+        # and downstream code (e.g. tier.get(...) in the router) crashes.
+        # Top-level commas split entries; nested {} or [] are not supported.
+        inner = value[1:-1].strip()
+        if not inner:
+            return {}
+        out: dict = {}
+        for part in inner.split(","):
+            part = part.strip()
+            if not part or ":" not in part:
+                continue
+            k, v = part.split(":", 1)
+            out[k.strip()] = _scalar(v.strip())
+        return out
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     if value.lower() in {"true", "false"}:
