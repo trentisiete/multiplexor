@@ -3,9 +3,9 @@
 > **The routing policy for free-tier AI CLIs.** Pairs with [endy][endy] when
 > you also need a runtime, tmux orchestration, and cross-agent handoff.
 
-You have a primary agent doing the heavy work. You also have Gemini CLI, OpenCode, and maybe a local Ollama model sitting idle. `multiplexor` connects them. It lets your main agent delegate tasks to any installed AI CLI -- automatically picking the best one, falling back when quotas run dry, and keeping everything local.
+You have a primary agent doing the heavy work. You also have Gemini CLI, OpenCode, CommandCode (cmd, Kimi K2.6), and maybe a local Ollama model sitting idle. `multiplexor` connects them. It lets your main agent delegate tasks to any installed AI CLI -- automatically picking the best one, falling back when quotas run dry, and keeping everything local.
 
-No proxies. No daemon. No MCP layer. Just a small Python command that knows which CLIs you have installed, scores them, picks one, runs it, and moves on.
+No proxies. No daemon. No MCP layer. Just a small Python command that knows which CLIs you have installed, scores them, picks one, runs it, and moves on. Designed to pair with [endy][endy] so the same router that picks the next CLI for a fresh `delegate` also picks the next agent for an `endy handoff`.
 
 [endy]: https://github.com/trentisiete/endy
 
@@ -23,17 +23,31 @@ This is not about bypassing limits. It is about making sure you never sit idle w
 
 ## How it works
 
+The router has the same scoring logic across every entry point — what
+changes is who calls it and whether work runs as a side effect.
+
 1. You install `multiplexor` and run `multiplexor init` to create your config.
 2. The config declares which CLIs you have, their tier (`free`, `included`, `local`, `paid`), and a priority score.
-3. When your primary agent calls `multiplexor delegate "task"`, the router computes `score = priority + tier_bonus`, filters out exhausted or missing providers, and picks the highest-ranked one.
-4. The task runs headless. Output is captured. If it fails or times out, the next provider tries automatically.
-5. When a provider hits its limit, `multiplexor next` marks it temporarily exhausted (24h cooldown by default) and launches the next eligible provider.
+3. The router computes `score = priority + tier_bonus`, filters out exhausted or missing providers, and picks the highest-ranked one.
+
+Four ways to consume that decision:
+
+| Entry point | What it does | Used by |
+|---|---|---|
+| `multiplexor delegate "task"` | Pick best + run the task headlessly. Output to stdout. | Your primary agent, scripts |
+| `multiplexor next` | Mark the last provider exhausted + **launch** the next one interactively. | You, mid-session |
+| `multiplexor next-provider [PREV]` | Pure query: mark `PREV` exhausted, **print** the next name, exit. No launch. | endy's `ENDY_HANDOFF_RESOLVER` hook |
+| `multiplexor status --json [name]` | Read-only snapshot of every provider's tier headroom as JSON. | `endy state`, dashboards |
+
+`next-provider` and `status --json` are the contracts that make
+[endy][endy] route handoffs automatically — see "Pairing with endy"
+below.
 
 ```
 primary agent
      |
      v
-multiplexor delegate "review this PR"
+multiplexor delegate "review this PR"            (or: multiplexor next-provider <prev>)
      |
      v
   router scores providers:
@@ -112,15 +126,14 @@ re-typing the prompt.
 
 ## Install
 
+For users:
+
 ```bash
 pipx install endy-multiplexor      # cleanest: isolated env, binaries on PATH
 # or:
 uv tool install endy-multiplexor   # same outcome via uv
 # or:
 pip install --user endy-multiplexor
-
-# From source (developers):
-pip install -e .
 ```
 
 The PyPI distribution name is `endy-multiplexor` (the plain `multiplexor`
@@ -129,6 +142,15 @@ Python module is still `import multiplexor`; the CLIs are still
 `multiplexor` and `multiplexor-next-provider`. If you install endy via
 `endy install`, multiplexor is bootstrapped automatically — you do not
 need this step separately.
+
+For developers / contributing to multiplexor itself:
+
+```bash
+git clone https://github.com/trentisiete/multiplexor
+cd multiplexor
+pip install -e .              # editable install from the working tree
+python3 -m unittest discover -s tests
+```
 
 Requires Python 3.11+ and at least one supported CLI in your `PATH`.
 
@@ -152,13 +174,17 @@ multiplexor next          # mark last provider exhausted, launch next
 Other commands you will use:
 
 ```bash
-multiplexor                    # launch best interactive provider
-multiplexor reset              # clear all exhaustion marks
-multiplexor next               # skip to next provider
-multiplexor delegate "task"    # headless subagent run
-multiplexor ask "prompt"       # alias for delegate
-multiplexor --dry-run          # show what would run
-multiplexor --provider gemini  # force a specific provider
+multiplexor                          # launch best interactive provider
+multiplexor reset                    # clear all exhaustion marks
+multiplexor next                     # mark current exhausted + launch next
+multiplexor next-provider [PREV]     # pure query: print next agent name, no launch
+multiplexor delegate "task"          # headless subagent run
+multiplexor ask "prompt"             # alias for delegate
+multiplexor status                   # human view of every provider's state
+multiplexor status --json            # machine view (envelope, all providers)
+multiplexor status --json gemini     # machine view (single provider, bare dict)
+multiplexor --dry-run                # show what would run
+multiplexor --provider gemini        # force a specific provider
 ```
 
 Piping works too:
@@ -218,6 +244,8 @@ providers:
 ```
 
 The `Provider` class handles everything else: detection from `PATH`, command construction, scoring, and prompt substitution. Adding a new provider means adding a config block. No code changes required.
+
+The fallback YAML parser (used when PyYAML is not installed in the venv) also accepts inline flow-dict syntax — `tiers: { free: { bonus: 30 } }` and `providers: { gemini: { enabled: false } }` parse the same as their indented forms. PyYAML is not a dependency; install it only if you want full YAML support (anchors, multi-line strings, etc.).
 
 Key fields:
 - `enabled`: include or skip this provider
