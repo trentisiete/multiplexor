@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
         return _ask(rest, opts)
     if command == "next":
         return _next(opts)
+    if command == "next-provider":
+        return _next_provider(rest, opts)
     if command == "reset":
         return _reset()
     if command != "run":
@@ -40,8 +42,29 @@ def main(argv: list[str] | None = None) -> int:
     return _run(opts)
 
 
+def next_provider_entry() -> int:
+    """Console-script entry point: `multiplexor-next-provider <prev> <task> <cwd>`.
+
+    Endy's ENDY_HANDOFF_RESOLVER invocation quotes the value as a single
+    word, so a subcommand string like "multiplexor next-provider" cannot
+    be exec'd directly. This wrapper is a single binary that just calls
+    the regular `next-provider` command with the same argv, so users can
+    set:
+
+        export ENDY_HANDOFF_RESOLVER=multiplexor-next-provider
+    """
+    return main(["next-provider", *sys.argv[1:]])
+
+
 def _extract_options(argv: list[str]) -> tuple[dict, list[str]]:
-    opts = {"dry_run": False, "provider": None}
+    opts = {
+        "dry_run": False,
+        "provider": None,
+        "no_mark": False,
+        "mode": None,
+        "verbose": False,
+        "for_endy": False,
+    }
     args: list[str] = []
     i = 0
     while i < len(argv):
@@ -53,6 +76,25 @@ def _extract_options(argv: list[str]) -> tuple[dict, list[str]]:
             if i + 1 >= len(argv):
                 raise SystemExit("--provider requires a provider name")
             opts["provider"] = argv[i + 1]
+            i += 2
+        elif arg == "--no-mark":
+            opts["no_mark"] = True
+            i += 1
+        elif arg == "--mode":
+            if i + 1 >= len(argv):
+                raise SystemExit("--mode requires a value (interactive or ask)")
+            opts["mode"] = argv[i + 1]
+            i += 2
+        elif arg in {"--verbose", "-V"}:
+            opts["verbose"] = True
+            i += 1
+        elif arg == "--for":
+            if i + 1 >= len(argv):
+                raise SystemExit("--for requires a target name (endy)")
+            target = argv[i + 1]
+            if target not in {"endy"}:
+                raise SystemExit(f"--for {target}: unknown target (expected: endy)")
+            opts["for_endy"] = True
             i += 2
         else:
             args.append(arg)
@@ -168,11 +210,101 @@ def _reset() -> int:
     return 0
 
 
+# Providers multiplexor knows about that endy cannot drive headlessly today.
+# Used by --for endy to filter the resolver output to actionable agents only.
+_ENDY_UNSUPPORTED = {"ollama"}
+
+
+def _next_provider(rest: list[str], opts: dict) -> int:
+    """Print the next eligible provider name to stdout. Pure query, no launch.
+
+    Signature matches endy's ENDY_HANDOFF_RESOLVER contract:
+        multiplexor-next-provider <prev-agent> [<task-id>] [<cwd>]
+    `task-id` and `cwd` are accepted and ignored — they exist so the
+    command can be a drop-in for the resolver hook without endy needing
+    to know what multiplexor wants.
+    """
+    prev = rest[0] if rest else None
+    # rest[1:] (task-id, cwd, anything else) is intentionally ignored.
+
+    config, _, _ = load_config()
+    data, st_path = load_state()
+    mode = opts["mode"] or "interactive"
+    if mode not in {"interactive", "ask"}:
+        print(f"--mode {mode}: must be 'interactive' or 'ask'", file=sys.stderr)
+        return 2
+
+    # Mark the previous provider as exhausted (so it does not get re-selected),
+    # unless the caller opted out. Mirrors what `multiplexor next` does, minus
+    # the auto-launch.
+    hours = int(config.get("routing", {}).get("exhausted_cooldown_hours", 24))
+    if prev and not opts["no_mark"]:
+        from .providers import get_provider
+
+        if get_provider(config, prev):
+            if opts["dry_run"]:
+                data = copy.deepcopy(data)
+                data.setdefault("providers", {}).setdefault(prev, {})
+                data["providers"][prev]["status"] = "exhausted"
+                data["providers"][prev]["exhausted_until"] = "9999-12-31T00:00:00"
+            else:
+                data = mark_exhausted(prev, hours, st_path)
+        # Silently skip if `prev` is not a multiplexor provider (e.g. endy's
+        # `bash` stub agent). The resolver still computes the best alternative.
+
+    # Compute the ranked candidates. Reuses the same logic `status` / `doctor`
+    # surface, so what the resolver returns matches what the user sees.
+    rows = ranked_statuses(config, data, mode, check_installed=not opts["dry_run"])
+    eligible = [r for r in rows if r["eligible"]]
+    if opts["for_endy"]:
+        eligible = [r for r in eligible if r["name"] not in _ENDY_UNSUPPORTED]
+
+    if not eligible:
+        # Nothing endy can run with. Print the diagnostics to stderr so the
+        # caller can show them; stdout stays empty so the resolver hook fails
+        # cleanly and endy falls back to demanding an explicit --to.
+        msg_target = "multiplexor" if not opts["for_endy"] else "multiplexor (for endy)"
+        print(f"{msg_target}: no eligible provider", file=sys.stderr)
+        if opts["verbose"]:
+            for r in rows:
+                reason = r["reason"] or "ok"
+                print(f"  {r['name']}: eligible={_yes(r['eligible'])} reason={reason}", file=sys.stderr)
+        return 1
+
+    chosen = eligible[0]
+    print(chosen["name"])
+    if opts["verbose"]:
+        # Stderr stays out of the resolver's stdout (which only carries the
+        # name). Useful when running the command manually for debugging.
+        print(f"# score={chosen['score']} tier={chosen['tier']} mode={mode}", file=sys.stderr)
+        if len(eligible) > 1:
+            alt = ", ".join(f"{r['name']}({r['score']})" for r in eligible[1:5])
+            print(f"# alternatives: {alt}", file=sys.stderr)
+    return 0
+
+
 def _help() -> int:
     print(
         "Usage: multiplexor [--dry-run] [--provider NAME] [command]\n"
-        "Commands: init, doctor, status, delegate TASK, ask PROMPT, next, reset\n"
-        "Default command opens the best interactive provider."
+        "Commands:\n"
+        "  init                 Create a default config\n"
+        "  doctor               Show detected providers and state\n"
+        "  status               List providers ranked by score\n"
+        "  delegate TASK        Run TASK on the best eligible provider (headless)\n"
+        "  ask PROMPT           Alias for delegate\n"
+        "  next                 Mark last provider exhausted, launch the next one\n"
+        "  next-provider [PREV [TASK CWD]]\n"
+        "                       Pure query: print the next eligible provider name to\n"
+        "                       stdout and exit. Marks PREV exhausted unless --no-mark.\n"
+        "                       Designed as endy's ENDY_HANDOFF_RESOLVER target.\n"
+        "                       Options: --no-mark, --mode interactive|ask, --verbose,\n"
+        "                                --for endy (filter to providers endy can drive)\n"
+        "  reset                Clear all exhaustion marks\n"
+        "Default command opens the best interactive provider.\n"
+        "\n"
+        "For the endy integration:\n"
+        "  export ENDY_HANDOFF_RESOLVER=multiplexor-next-provider\n"
+        "  endy handoff <task-id>     # multiplexor picks the next agent automatically"
     )
     return 0
 

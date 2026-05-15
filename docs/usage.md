@@ -29,6 +29,7 @@ multiplexor delegate --dry-run "task"
 multiplexor delegate --provider gemini "task"
 multiplexor delegate --provider opencode "task"
 multiplexor next
+multiplexor next-provider [PREV]    # pure query, prints next agent name
 multiplexor reset
 ```
 
@@ -39,3 +40,60 @@ Default behavior:
 3. Use Ollama only as local fallback.
 
 `next` marks the last provider as temporarily exhausted and launches the next eligible provider.
+
+## next-provider (the endy resolver)
+
+`multiplexor next-provider` is the pure-query sibling of `next`. It does
+not launch anything — it just prints the name of the next eligible
+provider to stdout and exits.
+
+```bash
+$ multiplexor next-provider
+gemini
+
+$ multiplexor next-provider gemini
+opencode
+
+$ multiplexor next-provider --verbose
+gemini
+# score=130 tier=free mode=interactive
+# alternatives: opencode(115), ollama(15)
+```
+
+Argument shape matches endy's `ENDY_HANDOFF_RESOLVER` contract:
+
+```
+multiplexor-next-provider <prev-agent> [<task-id>] [<cwd>]
+```
+
+`task-id` and `cwd` are accepted and silently ignored — they exist so
+the command can be a drop-in for endy's resolver hook. The companion
+binary `multiplexor-next-provider` is a thin wrapper installed by the
+package; use it as the resolver value because endy's hook executes the
+variable as a single binary name (no shell word-splitting):
+
+```bash
+export ENDY_HANDOFF_RESOLVER=multiplexor-next-provider
+```
+
+### Options
+
+- `--no-mark` — pure query, leave state untouched.
+- `--mode interactive|ask` — filter by which command template the
+  provider must have (default `interactive`).
+- `--verbose` — emit score, tier, mode, and a short alternatives list
+  to stderr. Stdout still carries just the chosen name.
+- `--for endy` — exclude providers endy cannot drive headlessly
+  (currently just `ollama`).
+
+### Exit codes
+
+- `0` — chosen provider name printed to stdout.
+- `1` — no eligible provider; stdout empty; stderr explains.
+- `2` — bad arguments (unknown `--mode`, unknown `--for` target).
+
+### Behavior when prev is unknown
+
+If `<prev-agent>` is not a multiplexor provider (for example endy's
+`bash` stub), the command silently skips the exhaustion mark and still
+returns the best eligible alternative.

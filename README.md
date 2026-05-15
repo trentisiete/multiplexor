@@ -51,19 +51,48 @@ runtime that runs each CLI in a detached tmux window, captures its output to
 `.logs/`, and provides `endy handoff` — a one-command transfer of an
 in-flight coding task from one agent to another with full context.
 
-Wire them together by setting endy's resolver hook:
+Wire them together by setting endy's resolver hook to the dedicated
+binary multiplexor installs for this purpose:
 
 ```bash
-export ENDY_HANDOFF_RESOLVER="multiplexor next-provider"   # planned hook
-endy handoff <task-id>                                     # --to becomes optional
+export ENDY_HANDOFF_RESOLVER=multiplexor-next-provider
+endy handoff <task-id>                  # --to becomes optional
 ```
 
-When you call `endy handoff` without `--to`, endy invokes the resolver as
-`"$ENDY_HANDOFF_RESOLVER" <prev-agent> <task-id> <cwd>` and uses the agent
-name it prints. The resolver hook in endy already exists; the corresponding
-`next-provider` query command in multiplexor is on the roadmap below.
+When you call `endy handoff` without `--to`, endy invokes
+`multiplexor-next-provider <prev-agent> <task-id> <cwd>` and uses the
+agent name it prints to stdout. Under the hood that wrapper just calls
+`multiplexor next-provider`, which:
 
-You can use either tool alone:
+1. Marks `<prev-agent>` as exhausted (so it does not get re-selected).
+2. Computes the highest-scored eligible provider with the regular
+   `priority + tier_bonus` rules (same logic as `multiplexor status`).
+3. Prints the chosen name to stdout. Exits non-zero (silently, stderr
+   only) when nothing is eligible, so endy falls back to requiring an
+   explicit `--to`.
+
+A standalone test, no endy required:
+
+```console
+$ multiplexor-next-provider gemini task-123 /tmp/proj
+opencode
+$ multiplexor status | head -5
+1. opencode
+   tier: included
+   ...
+```
+
+Useful flags on `multiplexor next-provider` (or its `-next-provider`
+shim) for tuning the integration:
+
+| Flag | What it does |
+|---|---|
+| `--no-mark` | Pure query, do not touch state (good for dry-runs / health checks). |
+| `--mode interactive|ask` | Filter by which command template the provider must have. Default `interactive`. |
+| `--verbose` | Emit score + tier + alternatives to stderr (stdout stays a single name, safe for the resolver). |
+| `--for endy` | Skip providers endy cannot drive headlessly (e.g. `ollama`). |
+
+You can also use either tool alone:
 
 - **multiplexor without endy** — `multiplexor delegate "task"` runs a single
   task on the best-scored CLI. No tmux, no logs directory, no handoff chain.
@@ -237,9 +266,6 @@ Tests use mocked commands. No real CLIs or credentials needed.
 
 ## Roadmap
 
-- `multiplexor next-provider` — a pure query that prints the next eligible
-  provider name without running anything, designed for endy's
-  `ENDY_HANDOFF_RESOLVER` hook
 - Clearer per-provider setup hints when a CLI fails to run
 - Optional per-provider timeout overrides in config
 - Examples for adding custom local providers
