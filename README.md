@@ -1,10 +1,13 @@
 # multiplexor
 
-**Free-tier subagent routing for AI CLIs.**
+> **The routing policy for free-tier AI CLIs.** Pairs with [endy][endy] when
+> you also need a runtime, tmux orchestration, and cross-agent handoff.
 
 You have a primary agent doing the heavy work. You also have Gemini CLI, OpenCode, and maybe a local Ollama model sitting idle. `multiplexor` connects them. It lets your main agent delegate tasks to any installed AI CLI -- automatically picking the best one, falling back when quotas run dry, and keeping everything local.
 
 No proxies. No daemon. No MCP layer. Just a small Python command that knows which CLIs you have installed, scores them, picks one, runs it, and moves on.
+
+[endy]: https://github.com/trentisiete/endy
 
 ---
 
@@ -38,6 +41,38 @@ multiplexor delegate "review this PR"
      opencode  score 115  (priority 90  + included bonus 25)
      ollama    score  15  (priority 10  + local bonus 5)   (fallback only)
 ```
+
+---
+
+## Pairing with endy
+
+`multiplexor` decides *which* CLI should pick up next. [endy][endy] is the
+runtime that runs each CLI in a detached tmux window, captures its output to
+`.logs/`, and provides `endy handoff` — a one-command transfer of an
+in-flight coding task from one agent to another with full context.
+
+Wire them together by setting endy's resolver hook:
+
+```bash
+export ENDY_HANDOFF_RESOLVER="multiplexor next-provider"   # planned hook
+endy handoff <task-id>                                     # --to becomes optional
+```
+
+When you call `endy handoff` without `--to`, endy invokes the resolver as
+`"$ENDY_HANDOFF_RESOLVER" <prev-agent> <task-id> <cwd>` and uses the agent
+name it prints. The resolver hook in endy already exists; the corresponding
+`next-provider` query command in multiplexor is on the roadmap below.
+
+You can use either tool alone:
+
+- **multiplexor without endy** — `multiplexor delegate "task"` runs a single
+  task on the best-scored CLI. No tmux, no logs directory, no handoff chain.
+- **endy without multiplexor** — `endy handoff <id> --to <agent>` is a
+  one-shot manual handoff. You pick the next agent yourself.
+
+Together you get continuity: when one tier runs out, the routing policy
+decides who is next and the runtime carries the task across without you
+re-typing the prompt.
 
 ---
 
@@ -202,6 +237,9 @@ Tests use mocked commands. No real CLIs or credentials needed.
 
 ## Roadmap
 
+- `multiplexor next-provider` — a pure query that prints the next eligible
+  provider name without running anything, designed for endy's
+  `ENDY_HANDOFF_RESOLVER` hook
 - Clearer per-provider setup hints when a CLI fails to run
 - Optional per-provider timeout overrides in config
 - Examples for adding custom local providers
@@ -213,3 +251,8 @@ Tests use mocked commands. No real CLIs or credentials needed.
 - [Usage](docs/usage.md) - command examples and patterns
 - [Configuration](docs/configuration.md) - provider config, scoring, and state
 - [Security](docs/security.md) - threat model and operational notes
+
+## Related
+
+- [endy](https://github.com/trentisiete/endy) - the runtime. tmux + `.logs/`
+  + cross-agent `handoff` command. Use multiplexor as its routing policy.
