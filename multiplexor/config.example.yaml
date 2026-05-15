@@ -1,3 +1,8 @@
+# NOTE: this file is duplicated at ../config.example.yaml (repo root) so the
+# test suite can read it directly. Keep both in sync when adding or modifying
+# providers — this one ships with the installed package; the root one is what
+# tests load via open("config.example.yaml").
+
 routing:
   exhausted_cooldown_hours: 24
   ask_timeout_seconds: 120
@@ -96,6 +101,29 @@ providers:
     ask_command:
       - "codex"
       - "exec"
+      - "{prompt}"
+
+  cmd:
+    # CommandCode (Kimi K2.6 backend). ~€1 buys a lot of work; cheapest of the
+    # paid CLIs that integrate with endy. Disabled by default — the v1 focus
+    # is free tiers, paid providers opt in. Notes:
+    #   - cmd has no --model CLI flag (set globally via `cmd model` or /model).
+    #   - cmd -p must be the LAST flag (everything after is the prompt).
+    #   - --yolo is required for unattended runs (auto-approve).
+    #   - --max-turns is undocumented but accepted, defaults to 10 — endy
+    #     overrides to 200 inside its own spawn-long-task.sh.
+    enabled: false
+    tier: paid
+    priority: 60
+    command: "cmd"
+    interactive_command:
+      - "cmd"
+    ask_command:
+      - "cmd"
+      - "--skip-onboarding"
+      - "--trust"
+      - "--yolo"
+      - "-p"
       - "{prompt}"
 
   claude:

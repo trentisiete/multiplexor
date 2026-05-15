@@ -166,6 +166,7 @@ The default config ships with these providers:
 | Ollama     | local    | 10       | enabled       | Fallback only, runs locally     |
 | Qwen       | paid     | 95       | disabled      | Optional                        |
 | Hermes     | paid     | 80       | disabled      | Optional                        |
+| cmd        | paid     | 60       | disabled      | CommandCode / Kimi K2.6 — cheapest paid option |
 | Codex      | paid     | 40       | disabled      | Optional                        |
 | Claude     | paid     | 30       | disabled      | Optional                        |
 

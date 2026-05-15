@@ -14,6 +14,24 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("gemini", cfg["providers"])
         self.assertFalse(cfg["providers"]["codex"]["enabled"])
 
+    def test_default_config_includes_cmd_provider(self):
+        # endy supports `cmd` (CommandCode/Kimi K2.6) as a native agent.
+        # Multiplexor must ship a default entry for it so users get a
+        # routable provider out of the box (disabled by default — paid).
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg, _, _ = load_config(Path(tmp) / "missing.yaml")
+        self.assertIn("cmd", cfg["providers"])
+        cmd_cfg = cfg["providers"]["cmd"]
+        self.assertFalse(cmd_cfg["enabled"])
+        self.assertEqual(cmd_cfg["tier"], "paid")
+        # cmd's argv shape is finicky — -p must come last. Verify the
+        # template preserves the order so a future edit doesn't silently
+        # break it.
+        ask_template = cmd_cfg["ask_command"]
+        self.assertEqual(ask_template[0], "cmd")
+        self.assertEqual(ask_template[-2], "-p")
+        self.assertEqual(ask_template[-1], "{prompt}")
+
     def test_user_config_overrides_provider(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.yaml"
