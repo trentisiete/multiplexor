@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "doctor":
         return _doctor()
     if command == "status":
-        return _status()
+        return _status(rest, opts)
     if command in {"ask", "delegate"}:
         return _ask(rest, opts)
     if command == "next":
@@ -64,6 +64,7 @@ def _extract_options(argv: list[str]) -> tuple[dict, list[str]]:
         "mode": None,
         "verbose": False,
         "for_endy": False,
+        "json": False,
     }
     args: list[str] = []
     i = 0
@@ -79,6 +80,9 @@ def _extract_options(argv: list[str]) -> tuple[dict, list[str]]:
             i += 2
         elif arg == "--no-mark":
             opts["no_mark"] = True
+            i += 1
+        elif arg == "--json":
+            opts["json"] = True
             i += 1
         elif arg == "--mode":
             if i + 1 >= len(argv):
@@ -132,10 +136,43 @@ def _doctor() -> int:
     return 0
 
 
-def _status() -> int:
+def _status(rest: list[str] | None = None, opts: dict | None = None) -> int:
+    """List provider status. With names filter; with --json emit machine output.
+
+    Shapes:
+      multiplexor status                   → full table (human)
+      multiplexor status gemini            → one provider (human)
+      multiplexor status gemini opencode   → two providers (human)
+      multiplexor status --json            → JSON, every provider
+      multiplexor status --json gemini     → JSON, just gemini (one dict, not array)
+
+    The JSON form is the contract `endy state` consumes. Filtering by a single
+    name returns a single dict (no envelope); filtering by multiple names or
+    no name returns `{"providers": [...], "selected": "<name>"|null}` so the
+    caller always knows which provider multiplexor would pick right now.
+    """
+    rest = rest or []
+    opts = opts or {"json": False}
     config, _, _ = load_config()
     data, _ = load_state()
-    for index, row in enumerate(ranked_statuses(config, data), start=1):
+    rows = ranked_statuses(config, data, check_installed=not opts.get("dry_run", False))
+
+    # Filter to requested names. Unknown names exit non-zero so a caller that
+    # asked for a specific provider can detect "not in config".
+    if rest:
+        wanted = set(rest)
+        filtered = [r for r in rows if r["name"] in wanted]
+        missing = wanted - {r["name"] for r in filtered}
+        if missing:
+            print(f"unknown provider(s): {', '.join(sorted(missing))}", file=sys.stderr)
+            return 1
+        rows = filtered
+
+    if opts.get("json"):
+        return _status_json(rows, config, data, single=(len(rest) == 1))
+
+    # Human-readable path (unchanged shape).
+    for index, row in enumerate(rows, start=1):
         score = "-" if row["score"] is None else row["score"]
         print(f"{index}. {row['name']}")
         print(f"   tier: {row['tier']}")
@@ -148,6 +185,58 @@ def _status() -> int:
         if row["reason"]:
             print(f"   reason: {row['reason']}")
         print("")
+    return 0
+
+
+def _status_json(rows: list[dict], config: dict, data: dict, single: bool) -> int:
+    """JSON projection of provider status — the contract `endy state` consumes."""
+    import json
+
+    def row_to_dict(row: dict) -> dict:
+        provider = row["provider"]
+        exhausted_until = None
+        exhausted_seconds = None
+        if row["exhausted"]:
+            info = data.get("providers", {}).get(provider.name, {}) if isinstance(data.get("providers"), dict) else {}
+            until_str = info.get("exhausted_until") if isinstance(info, dict) else None
+            if until_str:
+                exhausted_until = until_str
+                try:
+                    from datetime import datetime
+                    delta = datetime.fromisoformat(until_str) - datetime.now()
+                    exhausted_seconds = max(0, int(delta.total_seconds()))
+                except (ValueError, TypeError):
+                    pass
+        return {
+            "name": row["name"],
+            "tier": row["tier"],
+            "priority": provider.priority,
+            "score": row["score"],
+            "enabled": provider.enabled,
+            "installed": row["installed"],
+            "exhausted": row["exhausted"],
+            "exhausted_until": exhausted_until,
+            "exhausted_seconds_remaining": exhausted_seconds,
+            "fallback_only": row["fallback_only"],
+            "eligible": row["eligible"],
+            "reason": row["reason"],
+        }
+
+    out_rows = [row_to_dict(r) for r in rows]
+    if single and out_rows:
+        # When the caller asked for a single named provider, return the bare
+        # object (no envelope). Less to unwrap on the consumer side.
+        print(json.dumps(out_rows[0], indent=2))
+        return 0
+
+    selected_row = next((r for r in rows if r["eligible"] and not r["fallback_only"]), None)
+    if not selected_row:
+        selected_row = next((r for r in rows if r["eligible"]), None)
+    payload = {
+        "providers": out_rows,
+        "selected": selected_row["name"] if selected_row else None,
+    }
+    print(json.dumps(payload, indent=2))
     return 0
 
 
@@ -289,7 +378,10 @@ def _help() -> int:
         "Commands:\n"
         "  init                 Create a default config\n"
         "  doctor               Show detected providers and state\n"
-        "  status               List providers ranked by score\n"
+        "  status [NAME ...]    List providers ranked by score. Optional names filter.\n"
+        "                       Pass --json for machine output (the shape endy state\n"
+        "                       consumes). Single-name + --json returns a bare dict;\n"
+        "                       multi/none returns {providers: [...], selected: ...}.\n"
         "  delegate TASK        Run TASK on the best eligible provider (headless)\n"
         "  ask PROMPT           Alias for delegate\n"
         "  next                 Mark last provider exhausted, launch the next one\n"

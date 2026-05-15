@@ -82,6 +82,11 @@ $ multiplexor status | head -5
    ...
 ```
 
+`endy state` (the per-spawn environment snapshot) reads multiplexor's
+view of the world via `multiplexor status --json [agent]`, which returns
+a machine-parseable shape including `exhausted_seconds_remaining` for
+each provider — see [docs/usage.md](docs/usage.md#status-with-json-for-endy-state).
+
 Useful flags on `multiplexor next-provider` (or its `-next-provider`
 shim) for tuning the integration:
 

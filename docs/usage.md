@@ -24,7 +24,7 @@ Useful commands:
 
 ```bash
 multiplexor doctor
-multiplexor status
+multiplexor status [NAME ...] [--json]   # ranked status; --json for endy state
 multiplexor delegate --dry-run "task"
 multiplexor delegate --provider gemini "task"
 multiplexor delegate --provider opencode "task"
@@ -97,3 +97,89 @@ export ENDY_HANDOFF_RESOLVER=multiplexor-next-provider
 If `<prev-agent>` is not a multiplexor provider (for example endy's
 `bash` stub), the command silently skips the exhaustion mark and still
 returns the best eligible alternative.
+
+## status (with JSON for `endy state`)
+
+`multiplexor status` is the read-only inspection counterpart. With
+`--json` it emits a machine-parseable shape — the contract `endy state`
+consumes when it shows tier headroom inside a spawned agent's
+environment block.
+
+```bash
+multiplexor status                       # human, every provider
+multiplexor status gemini                # human, one provider
+multiplexor status --json                # JSON, every provider
+multiplexor status --json gemini         # JSON, single bare object
+multiplexor status --json gemini codex   # JSON, envelope with both
+```
+
+### JSON shape
+
+When you pass exactly one provider name, you get a bare object:
+
+```json
+{
+  "name": "gemini",
+  "tier": "free",
+  "priority": 100,
+  "score": 130,
+  "enabled": true,
+  "installed": true,
+  "exhausted": false,
+  "exhausted_until": null,
+  "exhausted_seconds_remaining": null,
+  "fallback_only": false,
+  "eligible": true,
+  "reason": ""
+}
+```
+
+When you pass no name or multiple names, you get an envelope so the
+caller always knows which provider multiplexor would route to right now:
+
+```json
+{
+  "providers": [ { ...gemini... }, { ...opencode... } ],
+  "selected": "gemini"
+}
+```
+
+When a provider is exhausted, the relevant fields are populated:
+
+```json
+{
+  "name": "gemini",
+  ...
+  "exhausted": true,
+  "exhausted_until": "2026-05-16T14:49:56",
+  "exhausted_seconds_remaining": 7421,
+  "eligible": false,
+  "reason": "temporarily exhausted"
+}
+```
+
+`exhausted_seconds_remaining` is computed at call time (clamped at 0)
+so consumers don't have to parse the timestamp themselves to render
+"resets in 2h 03m".
+
+### Exit codes
+
+- `0` — successful query.
+- `1` — one or more requested names are not in the config. stderr lists
+  the unknown names; stdout stays empty.
+
+### Why this shape
+
+`endy state` builds an "environment" block prepended to every spawned
+task's prompt. It needs to tell the agent: who am I, what's the handoff
+chain, and what tier headroom remains for each provider. Multiplexor is
+the source of truth for the third part. The JSON contract above is
+designed to be parsed in one `jq` call without further computation:
+
+```bash
+multiplexor status --json gemini \
+  | jq -r '"gemini: " + (if .eligible then "ready" else .reason end)'
+# → gemini: ready
+# or
+# → gemini: temporarily exhausted (resets in 2h 03m)
+```
